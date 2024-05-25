@@ -1,0 +1,6 @@
+:PROPERTIES:
+:ID:       4648D818-79E6-4414-9B97-9507BF3ECF18
+:END:
+#+TITLE: ClipTo
+
+A small MacOS utility which intends to make it easier to copy text between user accounts.
