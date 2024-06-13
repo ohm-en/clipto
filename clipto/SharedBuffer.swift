@@ -12,34 +12,25 @@ let directory = "/Users/Shared/.cache"
 let fileName = "ClipToShared.json"
 let userDefaultsBookmarkKey = "com.clipTo.sharedFolderBookmark"
 
-class SharedBuffer: ObservableObject, Codable {
-    @Published var sharedBuffer: String
-    
-    enum CodingKeys: CodingKey {
-        case sharedBuffer
-    }
-    
-    required init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        sharedBuffer = try container.decode(String.self, forKey: .sharedBuffer)
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(sharedBuffer, forKey: .sharedBuffer)
-    }
+struct Buffer: Codable {
+  let sharedText: String
+}
 
-    func save(to directory: String = directory, fileName: String = fileName) {
+class SharedBuffer: ObservableObject {
+    func save(_ contents: String, to directory: String = directory, fileName: String = fileName, callback: @escaping
+    () -> Void) {
         createDirectoryIfNeeded(at: directory)
+        let buffer = Buffer(sharedText: contents)
         
         securelyAccessURL(for: directory, withKey: userDefaultsBookmarkKey) { permittedURL in
             do {
                 if let url = permittedURL {
                     let path = url.appendingPathComponent(fileName)
                     let encoder = JSONEncoder()
-                    let data = try encoder.encode(self)
+                    let data = try encoder.encode(buffer)
                     try data.write(to: path, options: [.atomicWrite, .completeFileProtection])
                     url.stopAccessingSecurityScopedResource()
+                    callback()
                 } else {
                     print("Access to the directory was not granted or failed.")
                 }
@@ -50,7 +41,7 @@ class SharedBuffer: ObservableObject, Codable {
         }
     }
     
-    func load(from directory: String = directory, fileName: String = fileName) {
+    func load(from directory: String = directory, fileName: String = fileName, callback: @escaping (_: String) -> Void) {
         securelyAccessURL(for: directory, withKey: userDefaultsBookmarkKey) { permittedURL in
             do {
                 guard let url = permittedURL else {
@@ -65,11 +56,9 @@ class SharedBuffer: ObservableObject, Codable {
                 
                 let data = try Data(contentsOf: fileURL)
                 let decoder = JSONDecoder()
-                let loadedData = try decoder.decode(Self.self, from: data)
+                let loadedData = try decoder.decode(Buffer.self, from: data)
                 
-                DispatchQueue.main.async {
-                    self.sharedBuffer = loadedData.sharedBuffer
-                }
+                callback(loadedData.sharedText)
             } catch {
                 print("Failed to load: \(error)")
                 scheduleNotification(withTitle: "Load Failed", body: "Failed to load your data due to: \(error.localizedDescription)")
@@ -77,18 +66,19 @@ class SharedBuffer: ObservableObject, Codable {
         }
     }
     
-    init(sharedBuffer: String = "") {
-        self.sharedBuffer = sharedBuffer
-        
+    init() {
         KeyboardShortcuts.onKeyUp(for: .copyToShareBuffer) { [self] in
             let clipboard = getClipboard()
-            self.sharedBuffer = clipboard
-            self.save()
+            self.save(clipboard) {
+                scheduleNotification(withTitle: "Set Shared Buffer", body: clipboard)
+            }
         }
         
         KeyboardShortcuts.onKeyUp(for: .pasteShareBuffer) { [self] in
-            load()
-            setClipboard(self.sharedBuffer)
+            self.load() { sharedBuffer in
+                scheduleNotification(withTitle: "Retrieved Shared Buffer", body: sharedBuffer)
+                setClipboard(sharedBuffer)
+            }
         }
     }
 }
